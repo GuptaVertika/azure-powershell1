@@ -488,13 +488,20 @@ namespace Microsoft.Azure.Commands.ResourceManager.Cmdlets.SdkClient
             try
             {
                 var validationResult = this.ValidateDeployment(parameters, deployment);
-
-                return new TemplateValidationInfo(validationResult);
+                switch (validationResult)
+                {
+                    case DeploymentExtended deploymentExtended:
+                        return new TemplateValidationInfo(deploymentExtended.Properties?.Providers?.ToList() ?? new List<Provider>(), new List<ErrorDetail>(), deploymentExtended.Properties?.Diagnostics?.ToList() ?? new List<DeploymentDiagnosticsDefinition>());
+                    case DeploymentValidationError deploymentValidationError:
+                        return new TemplateValidationInfo(new List<Provider>(), new List<ErrorDetail>(deploymentValidationError.Error.AsArray()), new List<DeploymentDiagnosticsDefinition>());
+                    default:
+                        throw new InvalidOperationException($"Received unexpected type {validationResult.GetType()}");
+                }
             }
             catch (Exception ex)
             {
                 var error = HandleError(ex).FirstOrDefault();
-                return new TemplateValidationInfo(new DeploymentValidateResult(error));
+                return new TemplateValidationInfo(new List<Provider>(), error.AsArray().ToList(), new List<DeploymentDiagnosticsDefinition>());
             }
         }
 
@@ -1709,8 +1716,8 @@ namespace Microsoft.Azure.Commands.ResourceManager.Cmdlets.SdkClient
         /// Validates a given deployment.
         /// </summary>
         /// <param name="parameters">The deployment create options</param>
-        /// <returns>The validation errors if there's any, or empty list otherwise.</returns>
-        public virtual List<PSResourceManagerError> ValidateDeployment(PSDeploymentCmdletParameters parameters)
+        /// <returns>The validation info</returns>
+        public virtual TemplateValidationInfo ValidateDeployment(PSDeploymentCmdletParameters parameters)
         {
             if (parameters.DeploymentName == null)
             {
@@ -1724,7 +1731,7 @@ namespace Microsoft.Azure.Commands.ResourceManager.Cmdlets.SdkClient
             {
                 WriteVerbose(ProjectResources.TemplateValid);
             }
-            return validationInfo.Errors.Select(e => e.ToPSResourceManagerError()).ToList();
+            return validationInfo;
         }
 
         public string GetDeploymentErrorMessagesWithOperationId(DeploymentOperationErrorInfo errorInfo, string deploymentName = null, string correlationId = null)
